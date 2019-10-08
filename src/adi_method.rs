@@ -31,7 +31,7 @@ pub mod adi_method {
                     if i == 0 || i == n || j == 0 ||  j == m {
                         0.0
                     } else {
-                        (self.rhs)(self.to_x(i), self.to_y(j), t)*dt/2.0
+                        (self.rhs)(self.to_x(i), self.to_y(j), t + 0.5*dt)*dt/2.0
                     }
                 };
 
