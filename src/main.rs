@@ -4,7 +4,7 @@ use std::io::{Write, Result};
 fn main() -> std::io::Result<()> { 
     use std::f64::consts::PI;
 
-    let n = 16;
+    let n = 64;
     let dt = 0.1/(n as f64);
 
     let bvp = adi_method::BVP {
@@ -26,7 +26,7 @@ fn main() -> std::io::Result<()> {
     let mut f = File::create("foo.txt")?;
     for ((i,j), u) in U.iter() {
         let u_exact = (bvp.exact.unwrap())(bvp.to_x(i), bvp.to_y(j), 2.0);
-        writeln!(&mut f, "{} {} {} {}", bvp.to_x(i), bvp.to_y(j), u, u_exact+0.1)?;
+        writeln!(&mut f, "{} {} {} {} {}", bvp.to_x(i), bvp.to_y(j), u, u_exact, (*u - u_exact).abs())?;
     }
     if let Some(err) = error {
         println!("Error = {}", err);
@@ -63,7 +63,7 @@ mod adi_method {
                 *x = (self.ic)(self.to_x(i), self.to_y(j));
             }
 
-            let mut t = dt;
+            let mut t = 0.0;
             while t < stop_time {
                 let f = |i, j|  {
                     if i == 0 || i == n || j == 0 ||  j == m {
@@ -81,7 +81,7 @@ mod adi_method {
             // Calculate error if exact solution is provided
             let mut max_err : Option<f64> = None;
             if let Some(exact) = self.exact {
-                let exact = |i, j| exact(self.to_x(i), self.to_y(j), t-dt);
+                let exact = |i, j| exact(self.to_x(i), self.to_y(j), t);
                 let err = U.iter().fold(0.0,
                     |err, ((i,j), x)| f64::max(err, (exact(i,j)-*x).abs()));
                 max_err = Some(err);
@@ -146,38 +146,24 @@ mod adi_method {
             where F : Fn(usize, usize) -> f64 {
             let (mu_x, mu_y) = self.mu();
 
-            // Explicit part of first half step 
-            // println!("----------------------------------");
-            // println!("Start");
-            // U.print();
+            // Explicit part of first half step
             U.apply_col_op(|x1, x2| explicit_stencil(mu_y, x1, x2));
             U.add(&f);
-            // println!("After first explicit half step");
-            // U.print();
-            self.apply_bc_y(&mut U, t);
-            // println!("After y boundary conditions applied");
-            // U.print();
+            self.apply_bc_y(&mut U, t+0.5*self.dt);
 
             // Implicit part of first half step
             let mut U = U.convert(); // Convert U to row major form
             U.apply_row_op(|x1, x2| implicit_stencil(mu_x, x1, x2));
-            // println!("After first implicit half step");
-            // U.print();
 
             // Explicit part of second half step
             U.apply_row_op(|x1, x2| explicit_stencil(mu_x, x1, x2));
             U.add(&f);
-            // println!("After second explicit half step");
-            // U.print();
             self.apply_bc_x(&mut U, t);
-            // println!("After x boundary conditions applied");
-            // U.print();
             
             // Implicit part of second half step
             let mut U = U.convert(); // Convert U to column major form
             U.apply_col_op(|x1, x2| implicit_stencil(mu_y, x1, x2));
-            // println!("After second implicit half step");
-            // U.print();
+            self.apply_bc_y(&mut U, t + self.dt);
 
             return U;
         }
@@ -218,88 +204,6 @@ mod adi_method {
         x2[n-2] = x1[n-2]/x2[n-2];
         for i in (1..n-2).rev() {
             x2[i] = (x1[i] + 0.5*mu*x2[i+1])/x2[i];
-        }
-    }
-
-    #[cfg(test)]
-    mod test {
-        use super::*;
-        #[test]
-        fn explicit_step_test() {
-            let n = 17;
-            let mut x1 : Vec<f64> = vec!(0.0; n);
-            let mut x2 : Vec<f64> = vec!(0.0; n);
-
-            let known = [0.000000000000000,
-                         0.056250000000000,
-                         0.107031250000000,
-                         0.150000000000000,
-                         0.185156250000000,
-                         0.212500000000000,
-                         0.232031250000000,
-                         0.243750000000000,
-                         0.247656250000000,
-                         0.243750000000000,
-                         0.232031250000000,
-                         0.212500000000000,
-                         0.185156250000000,
-                         0.150000000000000,
-                         0.107031250000000,
-                         0.056250000000000,
-                         0.000000000000000];
-
-            for i in 0..n {
-                let x = (i as f64)/((n-1) as f64);
-                x1[i] = x*(1.0-x);
-            }
-
-            explicit_stencil(0.6, &mut x1[..], &mut x2[..]);
-
-            let epsilon = 1e-10;
-            for (&x, &known) in x2.iter().zip(known.iter()) {
-                println!("{:.9}", x);
-                // assert!(x < known + epsilon);
-                // assert!(x > known - epsilon);
-            }
-
-        }
-
-        #[test]
-        fn implicit_step_test() {
-            let n = 17;
-            let mut x1 : Vec<f64> = vec!(0.0; n);
-            let mut x2 : Vec<f64> = vec!(0.0; n);
-
-            let known = [ 0.000000000000000,
-                          0.056706094932006,
-                          0.107120006304029,
-                          0.150017272022818,
-                          0.185159611151001,
-                          0.212500654115857,
-                          0.232031377466900,
-                          0.243750025707610,
-                          0.247656259640354,
-                          0.243750025707610,
-                          0.232031377466900,
-                          0.212500654115857,
-                          0.185159611151001,
-                          0.150017272022818,
-                          0.107120006304029,
-                          0.056706094932006,
-                          0.000000000000000];
-
-            for i in 0..n {
-                let x = (i as f64)/((n-1) as f64);
-                x1[i] = x*(1.0-x);
-            }
-
-            implicit_stencil(0.6, &mut x1[..], &mut x2[..]);
-
-            let epsilon = 1e-10;
-            for (&x, &known) in x2.iter().zip(known.iter()) {
-                assert!(x < known + epsilon);
-                assert!(x > known - epsilon);
-            }
         }
     }
 }
