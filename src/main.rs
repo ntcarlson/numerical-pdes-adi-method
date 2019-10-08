@@ -7,7 +7,7 @@ fn main() -> std::io::Result<()> {
     use std::f64::consts::PI;
 
     let stop_time = 2.0;
-
+    let mut errors : Vec<f64> = Vec::new();
     for i in 4..=7 {
         let n = 2usize.pow(i);
         let dt = 0.1/(n as f64);
@@ -34,7 +34,18 @@ fn main() -> std::io::Result<()> {
             writeln!(&mut f, "{:>10.8} {:>10.8} {:>10.8}", bvp.to_x(i), bvp.to_y(j), u)?;
         }
         if let Some(err) = error {
+            errors.push(err);
             println!("Error = {}", err);
+        }
+    }
+
+    for (k, error) in errors.iter().enumerate() {
+        print!("e_{} = {},", k, error);
+        if let Some(next_error) = errors.get(k+1) {
+            let ratio = errors[k]/errors[k+1];
+            println!("e_{}/e_{} = {}", k, k+1, ratio, )
+        } else {
+            println!("");
         }
     }
     Ok(())
